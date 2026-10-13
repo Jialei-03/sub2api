@@ -369,6 +369,10 @@ func (s *RateLimitService) applyCNProviderReactive429(
 		s.handleCNProviderInsufficientBalance(ctx, account, extractUpstreamErrorMessage(responseBody))
 		return true
 	}
+	if isMiniMaxRequestRateLimit(account, responseBody) {
+		s.handleMiniMaxRequestRate429(ctx, account, headers)
+		return true
+	}
 	// 2) 频率型 429（"速率限制"/"请求频率"）：与滚动窗口额度无关，交给默认 429
 	// 兜底使用秒级冷却（管理端可配，默认 5s）。否则一次并发突发会把账号冷却到
 	// 5h 窗口结束（实测 1.5~4.8 小时），把「限频」误伤成「额度耗尽」。
