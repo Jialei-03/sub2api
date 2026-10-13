@@ -2844,6 +2844,16 @@
         </div>
       </div>
 
+      <!-- RPM 限制（所有账号；Anthropic OAuth/SetupToken 在下方配额控制面板内配置） -->
+      <div v-if="!isAnthropicQuotaControlCreate" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <AccountRpmLimitSection
+          v-model:enabled="rpmLimitEnabled"
+          v-model:base-rpm="baseRpm"
+          v-model:strategy="rpmStrategy"
+          v-model:sticky-buffer="rpmStickyBuffer"
+        />
+      </div>
+
       <!-- 配额控制 (Anthropic OAuth/SetupToken: 亲和 + 窗口费用 + 会话 + RPM 等) -->
       <div
         v-if="form.platform === 'anthropic' && accountCategory === 'oauth-based'"
@@ -4175,6 +4185,7 @@ import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import AccountRpmLimitSection from '@/components/account/AccountRpmLimitSection.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
@@ -4265,6 +4276,26 @@ const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefin
   const name = upstreamRequestIdHeader.value.trim()
   if (!name) return extra
   return { ...(extra || {}), upstream_request_id_header: name }
+}
+
+// Anthropic OAuth/SetupToken accounts configure RPM inside their quota-control panel;
+// every other account gets the standalone RPM limit section.
+const isAnthropicQuotaControlCreate = computed(() =>
+  form.platform === 'anthropic' && accountCategory.value === 'oauth-based'
+)
+
+// Extra keys shared by every create path: upstream request-id header and, outside the
+// Anthropic OAuth/SetupToken panel, the account RPM limit.
+const withCommonAccountExtra = <T extends Record<string, unknown> | undefined>(extra: T): T | Record<string, unknown> => {
+  const withHeader = withUpstreamRequestIdHeader(extra)
+  if (isAnthropicQuotaControlCreate.value || !rpmLimitEnabled.value || baseRpm.value == null || baseRpm.value <= 0) {
+    return withHeader
+  }
+  const out: Record<string, unknown> = { ...(withHeader || {}), base_rpm: Math.floor(baseRpm.value), rpm_strategy: rpmStrategy.value }
+  if (rpmStrategy.value === 'tiered' && rpmStickyBuffer.value != null && rpmStickyBuffer.value > 0) {
+    out.rpm_sticky_buffer = Math.floor(rpmStickyBuffer.value)
+  }
+  return out
 }
 
 const baseUrlHint = computed(() => {
@@ -6239,7 +6270,7 @@ const handleSubmit = async () => {
   await doCreateAccount({
     ...form,
     group_ids: form.group_ids,
-    extra: withUpstreamRequestIdHeader(extra),
+    extra: withCommonAccountExtra(extra),
     upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
@@ -6302,7 +6333,7 @@ const createAccountAndFinish = async (
     return
   }
   // Inject quota limits for apikey/bedrock/service_account accounts
-  let finalExtra = withUpstreamRequestIdHeader(extra)
+  let finalExtra = withCommonAccountExtra(extra)
   if (supportsAccountQuota(type)) {
     const quotaExtra: Record<string, unknown> = { ...(finalExtra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
@@ -6428,7 +6459,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           platform: 'grok',
           type: 'oauth',
           credentials,
-          extra: withUpstreamRequestIdHeader(extra),
+          extra: withCommonAccountExtra(extra),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -6605,7 +6636,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           platform: 'grok',
           type: 'oauth',
           credentials,
-          extra: withUpstreamRequestIdHeader(extra),
+          extra: withCommonAccountExtra(extra),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -6704,7 +6735,7 @@ const handleOpenAIExchange = async (authCode: string) => {
         platform: 'openai',
         type: 'oauth',
         credentials,
-        extra: withUpstreamRequestIdHeader(extra),
+        extra: withCommonAccountExtra(extra),
         proxy_id: form.proxy_id,
         concurrency: form.concurrency,
         load_factor: form.load_factor ?? undefined,
@@ -6819,7 +6850,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra: withUpstreamRequestIdHeader(extra),
+      extra: withCommonAccountExtra(extra),
       update_existing: true
     })
 
@@ -6897,7 +6928,7 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra: withUpstreamRequestIdHeader(extra)
+      extra: withCommonAccountExtra(extra)
     })
 
     appStore.showSuccess(t('admin.accounts.accountCreated'))
@@ -6985,7 +7016,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
             platform: 'openai',
             type: 'oauth',
             credentials,
-            extra: withUpstreamRequestIdHeader(extra),
+            extra: withCommonAccountExtra(extra),
             proxy_id: form.proxy_id,
             concurrency: form.concurrency,
             load_factor: form.load_factor ?? undefined,
@@ -7084,7 +7115,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           platform: 'antigravity',
           type: 'oauth',
           credentials,
-          extra: withUpstreamRequestIdHeader({}),
+          extra: withCommonAccountExtra({}),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -7465,7 +7496,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           platform: form.platform,
           type: addMethod.value, // Use addMethod as type: 'oauth' or 'setup-token'
           credentials,
-          extra: withUpstreamRequestIdHeader(extra),
+          extra: withCommonAccountExtra(extra),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
