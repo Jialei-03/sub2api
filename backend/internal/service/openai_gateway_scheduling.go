@@ -1068,7 +1068,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			continue
 		}
 		if !s.isOpenAIAccountSchedulableForRPM(ctx, fresh, false, rpmCounts) {
-			filterStats.exclude("rpm_limited")
+			filterStats.exclude("rpm_rate_limited")
 			continue
 		}
 		compactTier := 0
@@ -1317,7 +1317,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		if !s.isOpenAIAccountSchedulableForRPM(ctx, acc, false, rpmCounts) {
-			filterStats.exclude("rpm_limited")
+			filterStats.exclude("rpm_rate_limited")
 			continue
 		}
 		baseCandidateCount++
