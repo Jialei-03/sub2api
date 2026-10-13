@@ -1010,6 +1010,10 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
+	// Account RPM limit reached for this minute: keep the binding, select another account.
+	if !s.isOpenAIAccountSchedulableForRPM(ctx, account, true, nil) {
+		return nil
+	}
 
 	// 刷新会话 TTL 并返回账号
 	// Refresh session TTL and return account
@@ -1033,6 +1037,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	eligible := make([]*Account, 0, len(accounts))
 	compactTiers := make(map[int64]int, len(accounts))
+	rpmCounts := s.openAIRPMCounts(ctx, accounts)
 
 	for i := range accounts {
 		acc := &accounts[i]
@@ -1060,6 +1065,10 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 		}
 		if vetoed, reason := openAIProfitControlVetoReason(ctx, fresh); vetoed {
 			filterStats.exclude(reason)
+			continue
+		}
+		if !s.isOpenAIAccountSchedulableForRPM(ctx, fresh, false, rpmCounts) {
+			filterStats.exclude("rpm_limited")
 			continue
 		}
 		compactTier := 0
@@ -1232,6 +1241,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+					} else if !s.isOpenAIAccountSchedulableForRPM(ctx, account, true, nil) {
+						// Account RPM limit reached for this minute: fall through to load-aware
+						// selection without dropping the binding.
 					} else {
 						result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 						if err == nil && result != nil && result.Acquired {
@@ -1278,6 +1290,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	baseCandidateCount := 0
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	candidates := make([]*Account, 0, len(accounts))
+	rpmCounts := s.openAIRPMCounts(ctx, accounts)
 	for i := range accounts {
 		acc := &accounts[i]
 		if isExcluded(acc.ID) {
@@ -1301,6 +1314,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact) {
 			filterStats.exclude("channel_upstream_restricted")
+			continue
+		}
+		if !s.isOpenAIAccountSchedulableForRPM(ctx, acc, false, rpmCounts) {
+			filterStats.exclude("rpm_limited")
 			continue
 		}
 		baseCandidateCount++
