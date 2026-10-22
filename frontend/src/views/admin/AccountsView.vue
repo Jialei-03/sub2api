@@ -313,7 +313,9 @@
             </div>
           </template>
           <template #cell-usage="{ row }">
+            <TokenLabUsageCell v-if="row.id === 6 && row.platform === 'anthropic'" :account="row" />
             <AccountUsageCell
+              v-else
               :account="row"
               :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
               :today-stats-loading="todayStatsLoading"
@@ -521,6 +523,7 @@ import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.
 import type { SelectOption } from '@/components/common/Select.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
+import TokenLabUsageCell from '@/components/account/TokenLabUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
