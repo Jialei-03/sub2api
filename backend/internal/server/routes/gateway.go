@@ -589,6 +589,14 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": decision.AmbiguousMessage()}})
 				return
 			}
+			if !decision.Matched {
+				// API Key 跨平台歧义放行时，handler 会按模型名前缀兜底选平台。分发
+				// handler 前就绑定同一兜底结果，否则请求先落进默认 Anthropic handler，
+				// 选中的 OpenAI 网关族账号会被送进 Anthropic 协议管线（上游空 404）。
+				if platform, detected := service.DetectModelPlatform(model); detected {
+					c.Request = c.Request.WithContext(service.WithResolvedTargetPlatform(c.Request.Context(), platform))
+				}
+			}
 			if decision.Matched {
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {

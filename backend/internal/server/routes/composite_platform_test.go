@@ -187,7 +187,9 @@ func TestCompositeTargetPlatformMiddlewareRewritesNestedLiveModel(t *testing.T) 
 
 // Scenario: 回归 —— openai OAuth 与 deepseek API Key 同时映射 gpt-6-astra 时，
 // 请求必须在路由层被拒绝，不能落到默认 Anthropic handler 后再按模型名猜平台。
-// 仅 API Key 的跨平台歧义保持原行为（放行且不解析平台）。
+// 仅 API Key 的跨平台歧义放行，并在分发前绑定模型名兜底平台，使 handler 分发
+// 与后续账号选择一致（gpt-6-luna 同时由 openai 与 opencode_go API Key 声明时，
+// 不能落进 Anthropic handler 再把 OpenAI 账号送进 Messages 管线）。
 func TestCompositeTargetPlatformMiddlewareRejectsOnlyOAuthAmbiguousOwnership(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tc := range []struct {
@@ -214,8 +216,9 @@ func TestCompositeTargetPlatformMiddlewareRejectsOnlyOAuthAmbiguousOwnership(t *
 			})))
 			router.Use(compositeTargetPlatformMiddleware(resolver))
 			router.POST("/v1/responses", func(c *gin.Context) {
-				_, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context())
-				require.False(t, resolved)
+				platform, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+				require.True(t, resolved)
+				require.Equal(t, service.PlatformOpenAI, platform)
 				c.Status(http.StatusNoContent)
 			})
 
